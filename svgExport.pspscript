@@ -1,0 +1,118 @@
+from JascApp import *
+import xml.etree.cElementTree as xml
+import os
+
+genSilent = {'ExecutionMode': App.Constants.ExecutionMode.Silent, 
+             'AutoActionMode': App.Constants.AutoActionMode.Match, 
+             'Version': ((9,0,0),1),
+             }
+
+def ScriptProperties():
+    return {
+        'Author': u'LeviFiction',
+        'Copyright': u'',
+        'Description': u'',
+        'Host': u'PaintShop Pro',
+        'Host Version': u'21.00'
+        }
+
+def Do(Environment):
+    pass
+
+top = "<?xml version='1.0' standalone='no'?>"
+doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
+svg = xml.Element('svg', {'version':"1.1", 'width':"1920", 'height':"1080", 'xmlns': "http://www.w3.org/2000/svg"})
+with open("C:\\Users\\matthewjohnson\\Pictures\\Levi_as_a_Hitman_Reborn_by_Obi_quiet.jpg", 'rb') as f:
+    data = f.read()
+    xml.SubElement(svg, 'image', {'width':'800', 'height':'600', 'href':'data:image/jpeg;base64,' + data.encode("base64")})
+with open("C:\\users\\matthewjohnson\\desktop\\test.svg", 'w') as f:
+    root = xml.ElementTree(svg)
+    #root.write(f)
+    f.write(top)
+    f.write(doctype)
+    f.write(svg.tostring())
+
+def addEllipse(x,y,rx,ry,matrix=None):
+    if matrix:
+        xml.SubElement(root, 'ellipse', {'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
+    else:
+        xml.SubElement(root, 'ellipse', {'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry)})
+
+def addRect(root, top, left, width, height, rx, ry, matrix = None):
+    if matrix:
+        xml.SubElement(root, 'rect', {'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
+    else:
+        xml.SubElement(root, 'rect', {'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry)})
+
+
+def embedImage(Environment, root, filename):
+    svgpng = os.path.join(os.environ['USERPROFILE'], 'AppData\\Local\\Temp\\', 'svgpng.png')
+    # FileOpen
+    App.Do( Environment, 'FileOpen', {
+            'FileList': [filename], 
+            'Folder': u'C:\\Users\\matthewjohnson\\Pictures', 
+            'FileFormat': App.Constants.FileFormat.Unknown, 
+            'ShowPreview': True, 
+            'EnableBrowser': True, 
+            'FavFileList': [], 
+            'RawCameraSettings': {
+                'WhiteBalance': App.Constants.WhiteBalance.AsShot, 
+                'SharpenMode': App.Constants.SharpenMode.Low, 
+                'Exposure': 0, 
+                'Rect': ((0,0), 0, 0), 
+                'ShowMaximized': False, 
+                'ShowPreview': True
+                }, 
+            'FileOpenScript': u'', 
+            'EnablePreprocessing': False, 
+            'GeneralSettings':genSilent
+            })
+            
+    Doc = App.Documents[-1]
+    w = Doc.Width
+    h = Doc.Height
+    # FileSaveCopyAs
+    App.Do( Environment, 'FileSaveCopyAs', {
+            'Encoding': {'PNG': {'Interlaced': False, 'OptimizedPalette': True, 'AlphaChannel': True }}, 
+            'FileName': svgpng, 
+            'FileFormat': App.Constants.FileFormat.PNG, 
+            'FormatDesc': u'PNG Portable Network Graphics', 
+            'WorkingMode': 0, 
+            'GeneralSettings': genSilent, 
+            'DefaultProperties': []
+            }, Doc)
+    App.Do( Environment, 'FileClose', {}, Doc)
+    with open("%userprofile%\\AppData\\Local\\Temp\\svgpng.png", 'rb') as f:
+        data = f.read()
+        xml.SubElement(root, 'image', {'width':str(w), 'height':str(h), 'href':'data:iamge/png;base64,' + data.encode("base64")})
+
+def openImage(Environment):
+        # FileOpen
+    App.Do( Environment, 'FileOpen', {
+            'FileList':[], 
+            'Folder': u'C:\\Users\\matthewjohnson\\Pictures', 
+            'FileFormat': App.Constants.FileFormat.Unknown, 
+            'ShowPreview': True, 
+            'EnableBrowser': True, 
+            'FavFileList': [], 
+            'RawCameraSettings': {
+                'WhiteBalance': App.Constants.WhiteBalance.AsShot, 
+                'SharpenMode': App.Constants.SharpenMode.Low, 
+                'Exposure': 0, 
+                'Rect': ((0,0), 0, 0), 
+                'ShowMaximized': False, 
+                'ShowPreview': True
+                }, 
+            'FileOpenScript': u'', 
+            'EnablePreprocessing': False, 
+            'GeneralSettings': {
+                'ExecutionMode': App.Constants.ExecutionMode.Interactive, 
+                'AutoActionMode': App.Constants.AutoActionMode.Match, 
+                'Version': ((21,0,0),1), 
+                'PreviewMode': 1, 
+                'ScreenControl': 1
+                }
+            })
+
+def pspMatrixToSVG(matrix):
+    return "matrix"+str(matrix[0],matrix[3],matrix[1],matrix[4],matrix[2],matrix[5])
