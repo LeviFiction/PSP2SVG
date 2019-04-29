@@ -17,56 +17,118 @@ def ScriptProperties():
         }
 
 def Do(Environment):
+    svg = makeSVG(Environment)
+    print(xml.tostring(svg))
+    SaveSVG("C:\\Users\\matthewjohnson\\desktop\\testsave.svg", svg)
+    
+def makeSVG(Environment, includeRaster=False, Embed=True):
+    rootTree = xml.Element('svg', {'version':"1.1", 'width':"1920", 'height':"1080", 'xmlns': "http://www.w3.org/2000/svg"})
+    selectBottomLayer(Environment)
+    newLayer = True
+    while newLayer:
+        result = returnLayerProperties(Environment)
+        print(result['LayerType'])
+        if result['LayerType'] in [0, 4,5,6,7,8,9,10,11,12,13,14,15] and includeRaster:
+            print("Not a good layer")
+        elif result['LayerType'] == 1:
+            print("Good layer")
+            group = createGroup(validName(result['General']['Name']))
+            objs = True
+            while objs:
+                objs = nextObject(Environment)
+                if objs:
+                    obj = objs['ListOfObjects'][0]
+                    if obj['ObjectType'] == 'Group':
+                        createVectorGroup(group, objs)
+                    elif obj['ObjectType'] == 'Rectangle':
+                        d = obj['RectangleData']
+                        print d['Matrix']
+                        addRect(group, d['ObjectName'], d['Top'], d['Left'],d['Width'], d['Height'], d['RadiusX'], d['RadiusY'], d['Matrix'])
+                    elif obj['ObjectType'] == 'Ellipse':
+                        d = obj['EllipseData']
+                        print d['Matrix']
+                        addEllipse(group, d['ObjectName'], d['CenterX'], d['CenterY'], d['RadiusX'], d['RadiusY'], d['Matrix'])
+                    elif obj['Path']:
+                        d = obj['ObjectData']
+                        addPath(group, d['ObjectName'], d['Path'])
+            rootTree.insert(len(rootTree), group)
+        newLayer = selectNextLayer(Environment)
+
+    return rootTree
+
+def createGroup(id):
+    return xml.Element('g', {'id': id})
+
+def createVectorGroup(group, groupData):
+    groups = []
+    for i in groupData['ListOfObjects']:
+        if i['ObjectType'] == 'Group':
+            groups.append(xml.Element('g', {'id':validName(i['GroupName']), 'count':i['Child Count']}))
+        elif i['ObjectType'] == 'Rectangle':
+            d = i['RectangleData']
+            print d['Matrix']
+            addRect(groups[-1], validName(d['ObjectName']), d['Top'], d['Left'],d['Width'], d['Height'], d['RadiusX'], d['RadiusY'], d['Matrix'])
+        elif i['ObjectType'] == 'Ellipse':
+            d = i['EllipseData']
+            print d['Matrix']
+            addEllipse(groups[-1], validName(d['ObjectName']), d['CenterX'], d['CenterY'], d['RadiusX'], d['RadiusY'], d['Matrix'])
+        elif i['Path']:
+            d = i['ObjectData']
+            addPath(group, d['ObjectName'], d['Path'])
+        print(groups[-1].attrib)
+        if groups[-1].attrib['count'] == len(groups[-1]):
+            if len(groups) > 1:
+                g = groups.pop()
+                g.attrib.pop('count')
+                groups[-1].insert(len(groups[-1]), g)
+    groups[-1].attrib.pop('count')
+    group.insert(len(group), groups[-1])
+
+def addType(data):
     pass
 
-top = "<?xml version='1.0' standalone='no'?>"
-doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
-svg = xml.Element('svg', {'version':"1.1", 'width':"1920", 'height':"1080", 'xmlns': "http://www.w3.org/2000/svg"})
-with open("C:\\Users\\matthewjohnson\\Pictures\\Levi_as_a_Hitman_Reborn_by_Obi_quiet.jpg", 'rb') as f:
-    data = f.read()
-    xml.SubElement(svg, 'image', {'width':'800', 'height':'600', 'href':'data:image/jpeg;base64,' + data.encode("base64")})
-with open("C:\\users\\matthewjohnson\\desktop\\test.svg", 'w') as f:
-    root = xml.ElementTree(svg)
-    #root.write(f)
-    f.write(top)
-    f.write(doctype)
-    f.write(svg.tostring())
+def validName(Name):
+    return Name.replace(" ", "_")
 
-def addEllipse(x,y,rx,ry,matrix=None):
+def SaveSVG(filename, rootTree):
+    top = "<?xml version='1.0' standalone='no'?>"
+    doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
+    #svg = xml.Element('svg', {'version':"1.1", 'width':"1920", 'height':"1080", 'xmlns': "http://www.w3.org/2000/svg"})
+    with open(filename, 'w') as f:
+        f.write(top)
+        f.write(doctype)
+        f.write(xml.tostring(rootTree))
+
+def addEllipse(root, id, x,y,rx,ry,matrix=None):
+    print("Entered Ellipse")
+    print(matrix)
     if matrix:
-        xml.SubElement(root, 'ellipse', {'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
+        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
     else:
-        xml.SubElement(root, 'ellipse', {'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry)})
+        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry)})
 
-def addRect(root, top, left, width, height, rx, ry, matrix = None):
+def addRect(root, id, top, left, width, height, rx, ry, matrix = None):
+    print("Entered Rectangle")
+    print(matrix)
     if matrix:
-        xml.SubElement(root, 'rect', {'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
+        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
     else:
-        xml.SubElement(root, 'rect', {'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry)})
+        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry)})
 
+def addPath(root, id, path):
+    cmd = ['M', 'L', 'C', 'Z']
+    pathstr = ""
+    for node in path:
+        pathstr += cmd[node[0]]
+        for i,d in enumerate(node):
+            if i == 0:
+                continue
+            pathstr += ",".join(list(map(str, d)))
+    xml.SubElement(root, 'path', {'id':id, 'd':path})
 
 def embedImage(Environment, root, filename):
     svgpng = os.path.join(os.environ['USERPROFILE'], 'AppData\\Local\\Temp\\', 'svgpng.png')
-    # FileOpen
-    App.Do( Environment, 'FileOpen', {
-            'FileList': [filename], 
-            'Folder': u'C:\\Users\\matthewjohnson\\Pictures', 
-            'FileFormat': App.Constants.FileFormat.Unknown, 
-            'ShowPreview': True, 
-            'EnableBrowser': True, 
-            'FavFileList': [], 
-            'RawCameraSettings': {
-                'WhiteBalance': App.Constants.WhiteBalance.AsShot, 
-                'SharpenMode': App.Constants.SharpenMode.Low, 
-                'Exposure': 0, 
-                'Rect': ((0,0), 0, 0), 
-                'ShowMaximized': False, 
-                'ShowPreview': True
-                }, 
-            'FileOpenScript': u'', 
-            'EnablePreprocessing': False, 
-            'GeneralSettings':genSilent
-            })
+    openImage(Environment, filename)
             
     Doc = App.Documents[-1]
     w = Doc.Width
@@ -86,33 +148,45 @@ def embedImage(Environment, root, filename):
         data = f.read()
         xml.SubElement(root, 'image', {'width':str(w), 'height':str(h), 'href':'data:iamge/png;base64,' + data.encode("base64")})
 
-def openImage(Environment):
-        # FileOpen
+def openImage(Environment, filename =""):
+    inter = App.Constants.ExecutionMode.Interactive
+    mode = genSilent.copy()
+    if filename:
+        mode['ExecutionMode'] = inter
+    # FileOpen
     App.Do( Environment, 'FileOpen', {
-            'FileList':[], 
+            'FileList':[filename], 
             'Folder': u'C:\\Users\\matthewjohnson\\Pictures', 
             'FileFormat': App.Constants.FileFormat.Unknown, 
             'ShowPreview': True, 
             'EnableBrowser': True, 
             'FavFileList': [], 
-            'RawCameraSettings': {
-                'WhiteBalance': App.Constants.WhiteBalance.AsShot, 
-                'SharpenMode': App.Constants.SharpenMode.Low, 
-                'Exposure': 0, 
-                'Rect': ((0,0), 0, 0), 
-                'ShowMaximized': False, 
-                'ShowPreview': True
-                }, 
             'FileOpenScript': u'', 
             'EnablePreprocessing': False, 
-            'GeneralSettings': {
-                'ExecutionMode': App.Constants.ExecutionMode.Interactive, 
-                'AutoActionMode': App.Constants.AutoActionMode.Match, 
-                'Version': ((21,0,0),1), 
-                'PreviewMode': 1, 
-                'ScreenControl': 1
-                }
+            'GeneralSettings': mode
             })
 
 def pspMatrixToSVG(matrix):
-    return "matrix"+str(matrix[0],matrix[3],matrix[1],matrix[4],matrix[2],matrix[5])
+    print("Entered Matrix")
+    print(matrix)
+    if matrix:
+        return "matrix"+str((matrix[0],matrix[3],matrix[1],matrix[4],matrix[2],matrix[5]))
+    return None
+
+def selectBottomLayer(Environment):
+    App.Do(Environment, 'SelectLayer', {'Path': (9999, -9999, [], False)})
+
+def selectNextLayer(Environment):
+    return App.Do(Environment, 'SelectNextLayer', {})
+
+def nextObject(Environment):
+    if App.Do(Environment, 'GetNextObject')['HaveObject']:
+        return returnVectorProperties(Environment)
+    else:
+        return None
+
+def returnLayerProperties(Environment):
+    return App.Do(Environment, 'ReturnLayerProperties')
+
+def returnVectorProperties(Environment):
+    return App.Do(Environment, 'ReturnVectorObjectProperties', {})
