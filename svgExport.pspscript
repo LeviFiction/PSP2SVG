@@ -22,7 +22,7 @@ def Do(Environment):
     SaveSVG("C:\\Users\\matthewjohnson\\desktop\\testsave.svg", svg)
     
 def makeSVG(Environment, includeRaster=False, Embed=True):
-    rootTree = xml.Element('svg', {'version':"1.1", 'width':"1920", 'height':"1080", 'xmlns': "http://www.w3.org/2000/svg"})
+    rootTree = xml.Element('svg', {'version':"1.1", 'width':str(App.TargetDocument.Width), 'height':str(App.TargetDocument.Height), 'xmlns': "http://www.w3.org/2000/svg"})
     selectBottomLayer(Environment)
     newLayer = True
     while newLayer:
@@ -42,11 +42,11 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                         createVectorGroup(group, objs)
                     elif obj['ObjectType'] == 'Rectangle':
                         d = obj['RectangleData']
-                        print d['Matrix']
+                        print(d['Matrix'])
                         addRect(group, d['ObjectName'], d['Top'], d['Left'],d['Width'], d['Height'], d['RadiusX'], d['RadiusY'], d['Matrix'])
                     elif obj['ObjectType'] == 'Ellipse':
                         d = obj['EllipseData']
-                        print d['Matrix']
+                        print(d['Matrix'])
                         addEllipse(group, d['ObjectName'], d['CenterX'], d['CenterY'], d['RadiusX'], d['RadiusY'], d['Matrix'])
                     elif obj['Path']:
                         d = obj['ObjectData']
@@ -66,11 +66,11 @@ def createVectorGroup(group, groupData):
             groups.append(xml.Element('g', {'id':validName(i['GroupName']), 'count':i['Child Count']}))
         elif i['ObjectType'] == 'Rectangle':
             d = i['RectangleData']
-            print d['Matrix']
+            print(d['Matrix'])
             addRect(groups[-1], validName(d['ObjectName']), d['Top'], d['Left'],d['Width'], d['Height'], d['RadiusX'], d['RadiusY'], d['Matrix'])
         elif i['ObjectType'] == 'Ellipse':
             d = i['EllipseData']
-            print d['Matrix']
+            print(d['Matrix'])
             addEllipse(groups[-1], validName(d['ObjectName']), d['CenterX'], d['CenterY'], d['RadiusX'], d['RadiusY'], d['Matrix'])
         elif i['Path']:
             d = i['ObjectData']
