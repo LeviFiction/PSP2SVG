@@ -124,7 +124,7 @@ def addPath(root, id, path):
             if i == 0:
                 continue
             pathstr += ",".join(list(map(str, d)))
-    xml.SubElement(root, 'path', {'id':id, 'd':path})
+    xml.SubElement(root, 'path', {'id':id, 'd':pathstr})
 
 def embedImage(Environment, root, filename):
     svgpng = os.path.join(os.environ['USERPROFILE'], 'AppData\\Local\\Temp\\', 'svgpng.png')
