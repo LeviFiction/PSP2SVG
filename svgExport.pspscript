@@ -10,15 +10,14 @@ genSilent = {'ExecutionMode': App.Constants.ExecutionMode.Silent,
 def ScriptProperties():
     return {
         'Author': u'LeviFiction',
-        'Copyright': u'',
-        'Description': u'',
+        'Copyright': u'2021',
+        'Description': u'Exports entire image to SVG format',
         'Host': u'PaintShop Pro',
-        'Host Version': u'21.00'
+        'Host Version': u'9.00'
         }
 
 def Do(Environment):
     svg = makeSVG(Environment)
-    print(xml.tostring(svg))
     SaveSVG(user_path("desktop", "testsvg.svg"), svg)
 
 # This function is used to see if materials already exist as resource
@@ -34,7 +33,10 @@ def elements_equal(e1, e2):
 def makeSVG(Environment, includeRaster=False, Embed=True):
     """Start process of converting full document to SVG"""
     current_layer_path = None
-    rootTree = xml.Element('svg', {'version':"1.1", 'width':str(App.TargetDocument.Width), 'height':str(App.TargetDocument.Height), 'xmlns': "http://www.w3.org/2000/svg"})
+    rootTree = xml.Element('svg', {'version':"1.1", 
+                                   'width':str(App.TargetDocument.Width),
+                                   'height':str(App.TargetDocument.Height),
+                                   'xmlns': "http://www.w3.org/2000/svg"})
     selectBottomLayer(Environment)
     newLayer = True
     while newLayer:
@@ -43,11 +45,9 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
             break
         else:
             current_layer_path = result['Path']
-        print(result["LayerType"])
         if result['LayerType'] in [0,4,5,6,7,8,9,10,11,12,13,14,15] and includeRaster:
             print("Not a good layer")
         elif result['LayerType'] == 1:
-            print("Good layer")
             group = createGroup(validName(result['General']['Name']))
             objs = True
             while objs:
@@ -55,18 +55,41 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                 if objs:
                     obj = objs['ListOfObjects'][0]
                     if obj['ObjectType'] == 'Group':
-                        createVectorGroup(group, objs)
+                        #createVectorGroup(group, objs)
+                        print("Create Vector Group")
+                        create_vector_group(Environment, group, objs)
                     elif obj['ObjectType'] == 'Rectangle':
-                        d = obj['RectangleData']
-                        print(d['Matrix'])
-                        addRect(group, d['ObjectName'], d['Top'], d['Left'],d['Width'], d['Height'], d['RadiusX'], d['RadiusY'], d['Matrix'])
+                        data = obj['RectangleData']
+                        addRect(group, data['ObjectName'],
+                                       data['Top'],
+                                       data['Left'],
+                                       data['Width'],
+                                       data['Height'],
+                                       data['RadiusX'],
+                                       data['RadiusY'],
+                                       data['Matrix'])
                     elif obj['ObjectType'] == 'Ellipse':
-                        d = obj['EllipseData']
-                        print(d['Matrix'])
-                        addEllipse(group, d['ObjectName'], d['CenterX'], d['CenterY'], d['RadiusX'], d['RadiusY'], d['Matrix'])
-                    elif obj['Path']:
-                        d = obj['ObjectData']
-                        addPath(group, d['ObjectName'], d['Path'])
+                        data = obj['EllipseData']
+                        addEllipse(group, data['ObjectName'],
+                                          data['CenterX'],
+                                          data['CenterY'],
+                                          data['RadiusX'],
+                                          data['RadiusY'],
+                                          data['Matrix'])
+                    elif obj['ObjectType'] == 'SymmetricShape':
+                        convert_to_path(Environment, obj['Path'])
+                        current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
+                        data = current_object['ObjectData']
+                        addPath(group, data['ObjectName'], data['Path'])
+                    elif obj['ObjectType'] in ['Text', 'TextEx']:
+                        convert_to_path(Environment, obj['Path'])
+                        current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
+                        data = current_object['ObjectData']
+                        addPath(group, data['ObjectName'], data['Path'])
+                    elif obj['ObjectType'] == 'Path':
+                        data = obj['ObjectData']
+                        addPath(group, data['ObjectName'], data['Path'])
+
             rootTree.insert(len(rootTree), group)
         newLayer = selectNextLayer(Environment)
 
@@ -87,27 +110,102 @@ def createVectorGroup(group, groupData):
             # Add group to groups list
             groups.append(xml.Element('g', {'id':validName(current_object['GroupName']), 'count':current_object['Child Count']}))
         elif current_object['ObjectType'] == 'Rectangle':
-            d = current_object['RectangleData']
-            print(d['Matrix'])
-            addRect(groups[-1], validName(d['ObjectName']), d['Top'], d['Left'],d['Width'], d['Height'], d['RadiusX'], d['RadiusY'], d['Matrix'])
+            # Add rectangle to current group
+            data = current_object['RectangleData']
+            addRect(groups[-1], validName(data['ObjectName']),
+                                data['Top'],
+                                data['Left'],
+                                data['Width'],
+                                data['Height'],
+                                data['RadiusX'],
+                                data['RadiusY'],
+                                data['Matrix'])
         elif current_object['ObjectType'] == 'Ellipse':
-            d = current_object['EllipseData']
-            print(d['Matrix'])
-            addEllipse(groups[-1], validName(d['ObjectName']), d['CenterX'], d['CenterY'], d['RadiusX'], d['RadiusY'], d['Matrix'])
+            # Add ellipse to current group
+            data = current_object['EllipseData']
+            addEllipse(groups[-1], validName(data['ObjectName']),
+                                   data['CenterX'],
+                                   data['CenterY'],
+                                   data['RadiusX'],
+                                   data['RadiusY'],
+                                   data['Matrix'])
         elif current_object['Path']:
-            d = current_object['ObjectData']
-            addPath(groups[-1], d['ObjectName'], d['Path'])
-        print("Current Group - ", groups[-1].attrib)
-        print(len(groups[-1].getchildren()))
-        if groups[-1].attrib['count'] == len(groups[-1].getchildren()):
-            if len(groups) > 1:
-                g = groups.pop()
-                g.attrib.pop('count')
-                groups[-1].insert(len(groups[-1]), g)
-    groups[-1].attrib.pop('count')
-    group.insert(len(group), groups[-1])
+            # Add path to current group
+            data = current_object['ObjectData']
+            addPath(groups[-1], data['ObjectName'], data['Path'])
 
+        if groups[-1].attrib['count'] == len(groups[-1].getchildren()):
+            # If we've added all children that exist in group
+            # And there is more than one group
+            # Add last group as child to previous group
+            if len(groups) > 1:
+                g = groups.pop() # remove last group
+                g.attrib.pop('count') # remove count attribute from group
+                groups[-1].insert(len(groups[-1].getchildren()), g) # Add group to previous group 
+    groups[-1].attrib.pop('count') # remove count attribute from top level group
+    group.insert(len(group.getchildren()), groups[-1]) # Add final group to layer group
+
+def create_vector_group(Env, group, groupData):
+    """PSP returns all elements in a vector group, and sub groups, parse list and return group"""
+    # First go through all objects in group to convert unsupported objects
+    # reset is used to determine if we need to reselect the vector group
+    reset = False
+    current_path = groupData['ListOfObjects'][0]['Path']
+    for current_object in groupData['ListOfObjects']:
+        if current_object['ObjectType'] in ['SymmetricShape', 'Text', 'TextEx']:
+            reset = True
+            convert_to_path(Env, current_object['Path'])
+    if reset:
+        select_vector_absolute(Env, current_path)
+        groupData = returnVectorProperties(Env)
+
+    # List of groups to sort through
+    groups = []
+    # Loop over all objects in list
+    for current_object in groupData['ListOfObjects']:
+        # If object is a group, the next objects will be the children up to the count in Child Count
+        if current_object['ObjectType'] == 'Group':
+            # Add group to groups list
+            groups.append(xml.Element('g', {'id':validName(current_object['GroupName']), 'count':current_object['Child Count']}))
+        elif current_object['ObjectType'] == 'Rectangle':
+            # Add rectangle to current group
+            data = current_object['RectangleData']
+            addRect(groups[-1], validName(data['ObjectName']),
+                                data['Top'],
+                                data['Left'],
+                                data['Width'],
+                                data['Height'],
+                                data['RadiusX'],
+                                data['RadiusY'],
+                                data['Matrix'])
+        elif current_object['ObjectType'] == 'Ellipse':
+            # Add ellipse to current group
+            data = current_object['EllipseData']
+            addEllipse(groups[-1], validName(data['ObjectName']),
+                                   data['CenterX'],
+                                   data['CenterY'],
+                                   data['RadiusX'],
+                                   data['RadiusY'],
+                                   data['Matrix'])
+        elif current_object['Path']:
+            # Add path to current group
+            data = current_object['ObjectData']
+            addPath(groups[-1], data['ObjectName'], data['Path'])
+
+        if groups[-1].attrib['count'] == len(groups[-1].getchildren()):
+            # If we've added all children that exist in group
+            # And there is more than one group
+            # Add last group as child to previous group
+            if len(groups) > 1:
+                g = groups.pop() # remove last group
+                g.attrib.pop('count') # remove count attribute from group
+                groups[-1].insert(len(groups[-1].getchildren()), g) # Add group to previous group 
+    groups[-1].attrib.pop('count') # remove count attribute from top level group
+    group.insert(len(group.getchildren()), groups[-1]) # Add final group to layer group
+
+# TODO: Add text support
 def addType(data):
+    """I think this is supposed to be text"""
     pass
 
 def validName(Name):
@@ -158,12 +256,13 @@ def user_path(*paths):
 
 def embedImage(Environment, root, filename):
     """Open file, save as png and embed into xml"""
-    svgpng = os.path.join(os.environ['USERPROFILE'], 'AppData\\Local\\Temp\\', 'svgpng.png')
+    svgpng = user_path('AppData', 'Local', 'Temp','svgpng.png')
     openImage(Environment, filename)
             
     Doc = App.Documents[-1]
     w = Doc.Width
     h = Doc.Height
+
     # FileSaveCopyAs
     App.Do( Environment, 'FileSaveCopyAs', {
             'Encoding': {'PNG': {'Interlaced': False, 'OptimizedPalette': True, 'AlphaChannel': True }}, 
@@ -174,10 +273,12 @@ def embedImage(Environment, root, filename):
             'GeneralSettings': genSilent, 
             'DefaultProperties': []
             }, Doc)
+    
     App.Do( Environment, 'FileClose', {}, Doc)
-    with open("%userprofile%\\AppData\\Local\\Temp\\svgpng.png", 'rb') as f:
+    
+    with open(user_path("AppData","Local","Temp","svgpng.png"), 'rb') as f:
         data = f.read()
-        xml.SubElement(root, 'image', {'width':str(w), 'height':str(h), 'href':'data:iamge/png;base64,' + data.encode("base64")})
+        xml.SubElement(root, 'image', {'width':str(w), 'height':str(h), 'href':'data:image/png;base64,' + data.encode("base64")})
 
 def openImage(Environment, filename =""):
     """Open specific image"""
@@ -206,6 +307,14 @@ def pspMatrixToSVG(matrix):
         return "matrix"+str((matrix[0],matrix[3],matrix[1],matrix[4],matrix[2],matrix[5]))
     return None
 
+# TODO: Add pre-formatting for unsupported vector types
+def convert_to_path(Env, vector_object_path):
+    """Perform Convert to path on vector object"""
+    selectBottomLayer(Env)
+    select_vector(Env, vector_object_path)
+    # ConvertToPath
+    App.Do( Env, 'ConvertToPath', {})
+
 def selectBottomLayer(Environment):
     """Selects bottom most layer in layer's palette"""
     App.Do(Environment, 'SelectLayer', {'Path': (9999, -9999, [], False)})
@@ -213,6 +322,19 @@ def selectBottomLayer(Environment):
 def selectNextLayer(Environment):
     """Selects next full layer"""
     return App.Do(Environment, 'SelectNextLayer', {})
+
+def select_vector(Environment, path):
+    """Selects vector identified by path"""
+    return App.Do(Environment, 'VectorSelectionUpdate', 
+                               {'Path':path, 
+                               'Type':App.Constants.ObjectSelection.Select})
+
+def select_vector_absolute(Environment, path):
+    """Selects vector identified by path"""
+    selectBottomLayer(Environment)
+    return App.Do(Environment, 'VectorSelectionUpdate', 
+                               {'Path':path, 
+                               'Type':App.Constants.ObjectSelection.Select})
 
 def nextObject(Environment):
     """If layer contains another vector object return object list"""
