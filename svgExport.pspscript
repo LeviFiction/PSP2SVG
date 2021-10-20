@@ -19,16 +19,32 @@ def ScriptProperties():
 def Do(Environment):
     svg = makeSVG(Environment)
     print(xml.tostring(svg))
-    SaveSVG("C:\\Users\\matthewjohnson\\desktop\\testsave.svg", svg)
-    
+    SaveSVG(user_path("desktop", "testsvg.svg"), svg)
+
+# This function is used to see if materials already exist as resource
+def elements_equal(e1, e2):
+    """Determine if two elements are the same"""
+    if e1.tag != e2.tag: return False
+    if e1.text != e2.text: return False
+    if e1.tail != e2.tail: return False
+    if e1.attrib != e2.attrib: return False
+    if len(e1) != len(e2): return False
+    return all(elements_equal(c1, c2) for c1, c2 in zip(e1, e2))
+
 def makeSVG(Environment, includeRaster=False, Embed=True):
+    """Start process of converting full document to SVG"""
+    current_layer_path = None
     rootTree = xml.Element('svg', {'version':"1.1", 'width':str(App.TargetDocument.Width), 'height':str(App.TargetDocument.Height), 'xmlns': "http://www.w3.org/2000/svg"})
     selectBottomLayer(Environment)
     newLayer = True
     while newLayer:
         result = returnLayerProperties(Environment)
-        print(result['LayerType'])
-        if result['LayerType'] in [0, 4,5,6,7,8,9,10,11,12,13,14,15] and includeRaster:
+        if result['Path'] == current_layer_path:
+            break
+        else:
+            current_layer_path = result['Path']
+        print(result["LayerType"])
+        if result['LayerType'] in [0,4,5,6,7,8,9,10,11,12,13,14,15] and includeRaster:
             print("Not a good layer")
         elif result['LayerType'] == 1:
             print("Good layer")
@@ -57,26 +73,33 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
     return rootTree
 
 def createGroup(id):
+    """Create SVG Group usually represents a layer"""
     return xml.Element('g', {'id': id})
 
 def createVectorGroup(group, groupData):
+    """PSP returns all elements in a vector group, and sub groups, parse list and return group"""
+    # List of groups to sort through
     groups = []
-    for i in groupData['ListOfObjects']:
-        if i['ObjectType'] == 'Group':
-            groups.append(xml.Element('g', {'id':validName(i['GroupName']), 'count':i['Child Count']}))
-        elif i['ObjectType'] == 'Rectangle':
-            d = i['RectangleData']
+    # Loop over all objects in list
+    for current_object in groupData['ListOfObjects']:
+        # If object is a group, the next objects will be the children up to the count in Child Count
+        if current_object['ObjectType'] == 'Group':
+            # Add group to groups list
+            groups.append(xml.Element('g', {'id':validName(current_object['GroupName']), 'count':current_object['Child Count']}))
+        elif current_object['ObjectType'] == 'Rectangle':
+            d = current_object['RectangleData']
             print(d['Matrix'])
             addRect(groups[-1], validName(d['ObjectName']), d['Top'], d['Left'],d['Width'], d['Height'], d['RadiusX'], d['RadiusY'], d['Matrix'])
-        elif i['ObjectType'] == 'Ellipse':
-            d = i['EllipseData']
+        elif current_object['ObjectType'] == 'Ellipse':
+            d = current_object['EllipseData']
             print(d['Matrix'])
             addEllipse(groups[-1], validName(d['ObjectName']), d['CenterX'], d['CenterY'], d['RadiusX'], d['RadiusY'], d['Matrix'])
-        elif i['Path']:
-            d = i['ObjectData']
-            addPath(group, d['ObjectName'], d['Path'])
-        print(groups[-1].attrib)
-        if groups[-1].attrib['count'] == len(groups[-1]):
+        elif current_object['Path']:
+            d = current_object['ObjectData']
+            addPath(groups[-1], d['ObjectName'], d['Path'])
+        print("Current Group - ", groups[-1].attrib)
+        print(len(groups[-1].getchildren()))
+        if groups[-1].attrib['count'] == len(groups[-1].getchildren()):
             if len(groups) > 1:
                 g = groups.pop()
                 g.attrib.pop('count')
@@ -88,18 +111,20 @@ def addType(data):
     pass
 
 def validName(Name):
+    """Format current name to match SVG specs"""
     return Name.replace(" ", "_")
 
 def SaveSVG(filename, rootTree):
+    """Save SVG data to filename"""
     top = "<?xml version='1.0' standalone='no'?>"
     doctype = '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
-    #svg = xml.Element('svg', {'version':"1.1", 'width':"1920", 'height':"1080", 'xmlns': "http://www.w3.org/2000/svg"})
     with open(filename, 'w') as f:
         f.write(top)
         f.write(doctype)
         f.write(xml.tostring(rootTree))
 
 def addEllipse(root, id, x,y,rx,ry,matrix=None):
+    """Convert Ellipse data to SVG and add to root"""
     print("Entered Ellipse")
     print(matrix)
     if matrix:
@@ -108,6 +133,7 @@ def addEllipse(root, id, x,y,rx,ry,matrix=None):
         xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry)})
 
 def addRect(root, id, top, left, width, height, rx, ry, matrix = None):
+    """Convert Rectangle data to SVG and add to root"""
     print("Entered Rectangle")
     print(matrix)
     if matrix:
@@ -116,17 +142,22 @@ def addRect(root, id, top, left, width, height, rx, ry, matrix = None):
         xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry)})
 
 def addPath(root, id, path):
+    """Convert Path data to SVG and add to root"""
     cmd = ['M', 'L', 'C', 'Z']
     pathstr = ""
     for node in path:
-        pathstr += cmd[node[0]]
+        pathstr += cmd[node[0]] + " "
         for i,d in enumerate(node):
             if i == 0:
                 continue
-            pathstr += ",".join(list(map(str, d)))
+            pathstr += ",".join(list(map(str, d))) + " " 
     xml.SubElement(root, 'path', {'id':id, 'd':pathstr})
 
+def user_path(*paths):
+    return os.path.join(os.environ['USERPROFILE'], *paths)
+
 def embedImage(Environment, root, filename):
+    """Open file, save as png and embed into xml"""
     svgpng = os.path.join(os.environ['USERPROFILE'], 'AppData\\Local\\Temp\\', 'svgpng.png')
     openImage(Environment, filename)
             
@@ -149,6 +180,7 @@ def embedImage(Environment, root, filename):
         xml.SubElement(root, 'image', {'width':str(w), 'height':str(h), 'href':'data:iamge/png;base64,' + data.encode("base64")})
 
 def openImage(Environment, filename =""):
+    """Open specific image"""
     inter = App.Constants.ExecutionMode.Interactive
     mode = genSilent.copy()
     if filename:
@@ -167,6 +199,7 @@ def openImage(Environment, filename =""):
             })
 
 def pspMatrixToSVG(matrix):
+    """Conver PSP matrix to SVG format"""
     print("Entered Matrix")
     print(matrix)
     if matrix:
@@ -174,19 +207,26 @@ def pspMatrixToSVG(matrix):
     return None
 
 def selectBottomLayer(Environment):
+    """Selects bottom most layer in layer's palette"""
     App.Do(Environment, 'SelectLayer', {'Path': (9999, -9999, [], False)})
 
 def selectNextLayer(Environment):
+    """Selects next full layer"""
     return App.Do(Environment, 'SelectNextLayer', {})
 
 def nextObject(Environment):
+    """If layer contains another vector object return object list"""
     if App.Do(Environment, 'GetNextObject')['HaveObject']:
         return returnVectorProperties(Environment)
     else:
         return None
 
 def returnLayerProperties(Environment):
-    return App.Do(Environment, 'ReturnLayerProperties')
+    """Return layer properties"""
+    result = {}
+    result = App.Do(Environment, 'ReturnLayerProperties')
+    return result
 
 def returnVectorProperties(Environment):
+    """Return vector object properties as list of objects"""
     return App.Do(Environment, 'ReturnVectorObjectProperties', {})
