@@ -3,11 +3,17 @@ import Tkinter
 import tkFileDialog
 import xml.etree.cElementTree as xml
 import os
+import struct
+import uuid
+import math
 
 genSilent = {'ExecutionMode': App.Constants.ExecutionMode.Silent, 
              'AutoActionMode': App.Constants.AutoActionMode.Match, 
              'Version': ((9,0,0),1),
              }
+
+defs = None
+env = None
 
 def ScriptProperties():
     return {
@@ -19,9 +25,10 @@ def ScriptProperties():
         }
 
 def Do(Environment):
+    global env
+    env = Environment
     Tkinter.Tk().withdraw()
-    filename = tkFileDialog.asksaveasfilename(initialdir = user_path('Pictures'),title = "Export SVG",filetypes = (("SVG","*.svg"),))
-    print(filename)
+    filename = verify_filename(tkFileDialog.asksaveasfilename(initialdir = user_path('Pictures'),title = "Export SVG",filetypes = (("SVG","*.svg"),)))
     svg_data = makeSVG(Environment)
     SaveSVG(filename, svg_data)
 
@@ -38,6 +45,8 @@ def elements_equal(e1, e2):
 def makeSVG(Environment, includeRaster=False, Embed=True):
     """Start process of converting full document to SVG"""
     current_layer_path = None
+    global defs
+    defs = xml.Element('defs')
     rootTree = xml.Element('svg', {'version':"1.1", 
                                    'width':str(App.TargetDocument.Width),
                                    'height':str(App.TargetDocument.Height),
@@ -53,7 +62,8 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
         if result['LayerType'] in [0,4,5,6,7,8,9,10,11,12,13,14,15] and includeRaster:
             print("Not a good layer")
         elif result['LayerType'] == 1:
-            group = createGroup(validName(result['General']['Name']))
+            print(result.keys())
+            group = createGroup(validName(result['General']['Name']), opacity=str(result['General']['Opacity'])+'%')
             objs = True
             while objs:
                 color = "RGB(0,0,0"
@@ -66,8 +76,12 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                         create_vector_group(Environment, group, objs)
                     elif obj['ObjectType'] == 'Rectangle':
                         data = obj['RectangleData']
-                        if data['Fill']['Color']:
-                            color = "RGB"+str(data['Fill']['Color'])
+                        stroke_data = {'linestyle':data['LineStyle'],
+                                       'joinstyle':data['Join'],
+                                       'miter':data['MiterLimit'],
+                                       'stroke_color':data['Stroke'],
+                                       'width':data['LineWidth']}
+                        fill_color = data['Fill']
                         addRect(group, data['ObjectName'],
                                        data['Top'],
                                        data['Left'],
@@ -75,91 +89,62 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                                        data['Height'],
                                        data['RadiusX'],
                                        data['RadiusY'],
-                                       data['Matrix'], color)
+                                       data['Matrix'], fill_color, stroke_data)
                     elif obj['ObjectType'] == 'Ellipse':
                         data = obj['EllipseData']
-                        if data['Fill']['Color']:
-                            color = "RGB"+str(data['Fill']['Color'])
+                        stroke_data = {'linestyle':data['LineStyle'],
+                                       'joinstyle':data['Join'],
+                                       'miter':data['MiterLimit'],
+                                       'stroke_color':data['Stroke'],
+                                       'width':data['LineWidth']}
+                        fill_color = data['Fill']
                         addEllipse(group, data['ObjectName'],
                                           data['CenterX'],
                                           data['CenterY'],
                                           data['RadiusX'],
                                           data['RadiusY'],
-                                          data['Matrix'], color)
+                                          data['Matrix'], fill_color, stroke_data)
                     elif obj['ObjectType'] == 'SymmetricShape':
                         convert_to_path(Environment, obj['Path'])
                         current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
                         data = current_object['ObjectData']
-                        if data['Fill']['Color']:
-                            color = "RGB"+str(data['Fill']['Color'])
-                        addPath(group, data['ObjectName'], data['Path'], color)
+                        stroke_data = {'linestyle':data['LineStyle'],
+                                       'joinstyle':data['Join'],
+                                       'miter':data['MiterLimit'],
+                                       'stroke_color':data['Stroke'],
+                                       'width':data['LineWidth']}
+                        fill_color = data['Fill']
+                        addPath(group, data['ObjectName'], data['Path'], fill_color, stroke_data)
                     elif obj['ObjectType'] in ['Text', 'TextEx']:
                         convert_to_path(Environment, obj['Path'])
                         current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
                         data = current_object['ObjectData']
-                        if data['Fill']['Color']:
-                            color = "RGB"+str(data['Fill']['Color'])
-                        addPath(group, data['ObjectName'], data['Path'], color)
+                        stroke_data = {'linestyle':data['LineStyle'],
+                                       'joinstyle':data['Join'],
+                                       'miter':data['MiterLimit'],
+                                       'stroke_color':data['Stroke'],
+                                       'width':data['LineWidth']}
+                        fill_color = data['Fill']
+                        addPath(group, data['ObjectName'], data['Path'], fill_color, stroke_data)
                     elif obj['ObjectType'] == 'Path':
                         data = obj['ObjectData']
-                        if data['Fill']['Color']:
-                            color = "RGB"+str(data['Fill']['Color'])
-                        addPath(group, data['ObjectName'], data['Path'], color)
+                        stroke_data = {'linestyle':data['LineStyle'],
+                                       'joinstyle':data['Join'],
+                                       'miter':data['MiterLimit'],
+                                       'width':data['LineWidth'],
+                                       'stroke_color':data['Stroke']}
+                        fill_color = data['Fill']
+                        addPath(group, data['ObjectName'], data['Path'], fill_color, stroke_data)
 
             rootTree.insert(len(rootTree), group)
         newLayer = selectNextLayer(Environment)
-
+    if len(defs.getchildren()) >= 1: #if we have defs
+        rootTree.insert(0, defs)
     return rootTree
 
-def createGroup(id):
+def createGroup(id, opacity="100%"):
     """Create SVG Group usually represents a layer"""
-    return xml.Element('g', {'id': id})
-
-def createVectorGroup(group, groupData):
-    """PSP returns all elements in a vector group, and sub groups, parse list and return group"""
-    # List of groups to sort through
-    groups = []
-    # Loop over all objects in list
-    for current_object in groupData['ListOfObjects']:
-        # If object is a group, the next objects will be the children up to the count in Child Count
-        if current_object['ObjectType'] == 'Group':
-            # Add group to groups list
-            groups.append(xml.Element('g', {'id':validName(current_object['GroupName']), 'count':current_object['Child Count']}))
-        elif current_object['ObjectType'] == 'Rectangle':
-            # Add rectangle to current group
-            data = current_object['RectangleData']
-            addRect(groups[-1], validName(data['ObjectName']),
-                                data['Top'],
-                                data['Left'],
-                                data['Width'],
-                                data['Height'],
-                                data['RadiusX'],
-                                data['RadiusY'],
-                                data['Matrix'])
-        elif current_object['ObjectType'] == 'Ellipse':
-            # Add ellipse to current group
-            data = current_object['EllipseData']
-            addEllipse(groups[-1], validName(data['ObjectName']),
-                                   data['CenterX'],
-                                   data['CenterY'],
-                                   data['RadiusX'],
-                                   data['RadiusY'],
-                                   data['Matrix'])
-        elif current_object['Path']:
-            # Add path to current group
-            data = current_object['ObjectData']
-            addPath(groups[-1], data['ObjectName'], data['Path'])
-
-        if groups[-1].attrib['count'] == len(groups[-1].getchildren()):
-            # If we've added all children that exist in group
-            # And there is more than one group
-            # Add last group as child to previous group
-            if len(groups) > 1:
-                g = groups.pop() # remove last group
-                g.attrib.pop('count') # remove count attribute from group
-                groups[-1].insert(len(groups[-1].getchildren()), g) # Add group to previous group 
-    groups[-1].attrib.pop('count') # remove count attribute from top level group
-    group.insert(len(group.getchildren()), groups[-1]) # Add final group to layer group
+    return xml.Element('g', {'id': id, 'opacity':opacity})
 
 def create_vector_group(Env, group, groupData):
     """PSP returns all elements in a vector group, and sub groups, parse list and return group"""
@@ -186,6 +171,12 @@ def create_vector_group(Env, group, groupData):
         elif current_object['ObjectType'] == 'Rectangle':
             # Add rectangle to current group
             data = current_object['RectangleData']
+            stroke_data = {'linestyle':data['LineStyle'],
+                'joinstyle':data['Join'],
+                'miter':data['MiterLimit'],
+                'stroke_color':data['Stroke'],
+                'width':data['LineWidth']}
+            fill_color = data['Fill']
             addRect(groups[-1], validName(data['ObjectName']),
                                 data['Top'],
                                 data['Left'],
@@ -193,20 +184,43 @@ def create_vector_group(Env, group, groupData):
                                 data['Height'],
                                 data['RadiusX'],
                                 data['RadiusY'],
-                                data['Matrix'])
+                                data['Matrix'], fill_color, stroke_data)
         elif current_object['ObjectType'] == 'Ellipse':
             # Add ellipse to current group
             data = current_object['EllipseData']
+            stroke_data = {'linestyle':data['LineStyle'],
+                'joinstyle':data['Join'],
+                'miter':data['MiterLimit'],
+                'stroke_color':data['Stroke'],
+                'width':data['LineWidth']}
+            fill_color = data['Fill']
             addEllipse(groups[-1], validName(data['ObjectName']),
                                    data['CenterX'],
                                    data['CenterY'],
                                    data['RadiusX'],
                                    data['RadiusY'],
-                                   data['Matrix'])
+                                   data['Matrix'], fill_color, stroke_data)
+        elif current_object['ObjectType'] in ['Text', 'TextEx', 'SymmetricShape']:
+            convert_to_path(env, current_object['Path'])
+            current_object = returnVectorProperties(env)['ListOfObjects'][0]
+            data = current_object['ObjectData']
+            stroke_data = {'linestyle':data['LineStyle'],
+                            'joinstyle':data['Join'],
+                            'miter':data['MiterLimit'],
+                            'stroke_color':data['Stroke'],
+                            'width':data['LineWidth']}
+            fill_color = data['Fill']
+            addPath(groups[-1], data['ObjectName'], data['Path'], fill_color, stroke_data)            
         elif current_object['Path']:
             # Add path to current group
             data = current_object['ObjectData']
-            addPath(groups[-1], data['ObjectName'], data['Path'])
+            stroke_data = {'linestyle':data['LineStyle'],
+                'joinstyle':data['Join'],
+                'miter':data['MiterLimit'],
+                'stroke_color':data['Stroke'],
+                'width':data['LineWidth']}
+            fill_color = data['Fill']
+            addPath(groups[-1], data['ObjectName'], data['Path'], fill_color, stroke_data)
 
         if groups[-1].attrib['count'] == len(groups[-1].getchildren()):
             # If we've added all children that exist in group
@@ -237,25 +251,27 @@ def SaveSVG(filename, rootTree):
         f.write(doctype)
         f.write(xml.tostring(rootTree))
 
-def addEllipse(root, id, x,y,rx,ry,matrix=None, color="RGB(0,0,0"):
+def addEllipse(root, id, x,y,rx,ry,matrix=None, fill_color={'Color':(0,0,0)}, stroke_data = {'linestyle':None, 'joinstyle':'0', 'miter':'14', 'width':'1', 'stroke_color':{'Color':(0,0,0)}}):
     """Convert Ellipse data to SVG and add to root"""
-    print("Entered Ellipse")
-    print(matrix)
+    material = parse_stroke(stroke_data, stroke_data['stroke_color'])
+    material.update(parse_fill(fill_color))
+    attribs = {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry),}
     if matrix:
-        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix), 'fill':color })        
-    else:
-        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'fill':color})
+        attribs.update({'transform':pspMatrixToSVG(matrix)})
+    attribs.update(material)
+    xml.SubElement(root, 'ellipse', attribs)
 
-def addRect(root, id, top, left, width, height, rx, ry, matrix = None, color="RGB(0,0,0"):
+def addRect(root, id, top, left, width, height, rx, ry, matrix = None, fill_color={'Color':(0,0,0)}, stroke_data = {'linestyle':None, 'joinstyle':'0', 'miter':'14', 'width':'1', 'stroke_color':{'Color':(0,0,0)}}):
     """Convert Rectangle data to SVG and add to root"""
-    print("Entered Rectangle")
-    print(matrix)
+    material = parse_stroke(stroke_data, stroke_data['stroke_color'])
+    material.update(parse_fill(fill_color))
+    attribs = {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry)}
     if matrix:
-        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix), 'fill':color })        
-    else:
-        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'fill':color})
+        attribs.update({'transform':pspMatrixToSVG(matrix)})
+    attribs.update(material)
+    xml.SubElement(root, 'rect', attribs)
 
-def addPath(root, id, path, color="RGB(0,0,0"):
+def addPath(root, id, path, fill_color={'Color':(0,0,0)}, stroke_data = {'linestyle':None, 'joinstyle':'0', 'miter':'14', 'width':'1', 'stroke_color':{'Color':(0,0,0)}}):
     """Convert Path data to SVG and add to root"""
     cmd = ['M', 'L', 'C', 'Z']
     pathstr = ""
@@ -264,11 +280,81 @@ def addPath(root, id, path, color="RGB(0,0,0"):
         for i,d in enumerate(node):
             if i == 0:
                 continue
-            pathstr += ",".join(list(map(str, d))) + " " 
-    xml.SubElement(root, 'path', {'id':id, 'd':pathstr, 'fill':color})
+            pathstr += ",".join(list(map(str, d))) + " "
+    material = parse_stroke(stroke_data, stroke_data['stroke_color'])
+    material.update(parse_fill(fill_color))
+    attribs = {'id':id, 'd':pathstr}
+    attribs.update(material)
+    xml.SubElement(root, 'path', attribs)
+
+def verify_filename(filename):
+    path,ext = os.path.splitext(filename)
+    if ext.lower() != ".svg":
+        return filename + ".svg"
+    return filename
 
 def user_path(*paths):
     return os.path.join(os.environ['USERPROFILE'], *paths)
+
+def parse_stroke(stroke_data, stroke_color):
+    """Returns dictionary of stroke settings to add to xml attributes"""
+    # dash array doesn't match PSP output, but it's the best I can do
+    joins = ['Miter', 'Round', "Bevel"]
+    stroke_attribs = {'stroke-linejoin':joins[stroke_data['joinstyle']], 'stroke-miterlimit':str(stroke_data['miter']), 'stroke-width':str(stroke_data['width'])}
+    line = stroke_data['linestyle']
+    cap = line['FirstCap'][0]
+    if cap.lower() not in ['butt', 'square', 'round']:
+        cap = 'butt'
+    stroke_attribs.update({'stroke-linecap':cap})
+    if line['Segments'] != None:
+        stroke_attribs.update({'stroke-dasharray': ",".join(line['Segments'])})
+    stroke_attribs.update({'stroke':parse_material(stroke_color)})
+    return stroke_attribs
+
+def parse_fill(fill_data):
+    """Returns dictionary of stroke settings to add to xml attributes"""
+    return {'fill': parse_material(fill_data)}
+
+def parse_material(material):
+    """Returns formatted value for fill/stroke color attributes"""
+    if material['Color']:
+        return "RGB" + str(material['Color'])
+    if material['Gradient']:
+        print(material['Gradient'])
+        material = material['Gradient']
+        if material['ColorStops'] != None:
+            colorStops = material['ColorStops']
+            #kind of stupid, PSP uses "Midpoint" for color stops and "MidPoint" for opacity stops
+            #So that I wouldn't have to rewrite my code I just changed "Midpoint" to "MidPoint"
+            for stop in colorStops:
+                stop['MidPoint'] = stop.pop('Midpoint')
+            opacityStops = material['TransparencyStops']
+        elif material['Name'] != None:
+            name = findGradient(env, material['Name'])
+            reader = Gradient_Reader(name)
+            colorStops = reader.getColorStops()
+            opacityStops = reader.getTransStops()
+        else:
+            return
+        #Make sure stops are uniform, definate beginning, end. And ensure mid-points are all 50%
+        colorStops = ParseStops(colorStops, 0)
+        opacityStops = ParseStops(opacityStops, 1)
+        
+        #Make sure each Color and Transparency stop has a matching cousin
+        colorStops, opacityStops = PrepareMerge(colorStops, opacityStops)
+        
+        #Combine the stops into one stop list
+        final = merge(colorStops, opacityStops)
+        if final == None:
+            print("Error processing Gradient")
+            return
+        gradient = toSVG(validName(material['Name']), final, material['Angle'], material['Invert'], material['GradientType'], material['CenterPoint'], material['FocalPoint'])
+        id = gradient.attrib['id']
+        defs.insert(len(defs.getchildren()),gradient)
+        return "url(#"+str(id)+")"
+
+    if material['Pattern']:
+        return "rgb(0,0,0)"
 
 def embedImage(Environment, root, filename):
     """Open file, save as png and embed into xml"""
@@ -368,3 +454,297 @@ def returnLayerProperties(Environment):
 def returnVectorProperties(Environment):
     """Return vector object properties as list of objects"""
     return App.Do(Environment, 'ReturnVectorObjectProperties', {})
+
+class Gradient_Reader:
+    def __init__(self, filename):
+        self._header = ">4sHH"
+        self._namelen = ">B"
+        self._namestring = ">{}p"
+        self._numstops = ">H"
+        self._colorStop = ">IIH6BHH"
+        self._transStop = ">IIH"
+        self._end = ">6B"
+        self._offset = 0
+        self._signature = ""
+        self._version = ""
+        self._numGradients = ""
+        self._cStops = []
+        self._tStops = []
+        self._name = ""
+        self.filename = filename
+        #read entire file
+        file = open(filename, 'rb')
+        buff = file.read()
+        file.close()
+        #Grab header
+        self._signature, self._version, self._numGradients = struct.unpack(self._header, buff[self._offset:self._offset + struct.calcsize(self._header)])
+        self._offset = struct.calcsize(self._header)
+        #Grab Name
+        var = struct.unpack(self._namelen, buff[self._offset:self._offset+1])[0]+1
+        self._name = struct.unpack(">"+str(var)+"p", buff[self._offset:self._offset + struct.calcsize(">"+str(var)+"p")])[0].replace('\x00' , '')
+        self._offset = self._offset + struct.calcsize(">"+str(var)+"p")
+        #Grab Color Stops
+        var = struct.unpack(self._numstops, buff[self._offset:self._offset + struct.calcsize(self._numstops)])[0]
+        self._offset = self._offset + struct.calcsize(self._numstops)
+        for i in range(var):
+            #print struct.unpack(self._colorStop, buff[self._offset: self._offset+struct.calcsize(self._colorStop)])
+            loc,mid,model, R,R, G,G, B,B, A, type = struct.unpack(self._colorStop, buff[self._offset: self._offset+struct.calcsize(self._colorStop)])
+            self._cStops.append(cStop(loc, mid, model, [R,G,B],type))
+            self._offset = self._offset + struct.calcsize(self._colorStop)
+        #Grab Transparency Stops
+        var = struct.unpack(self._numstops, buff[self._offset:self._offset + struct.calcsize(self._numstops)])[0]
+        self._offset = self._offset + struct.calcsize(self._numstops)
+        for i in range(var):
+            loc,mid,opacity = struct.unpack(self._transStop, buff[self._offset: self._offset+struct.calcsize(self._transStop)])
+            self._tStops.append(tStop(loc, mid, opacity))
+            self._offset = self._offset + struct.calcsize(self._transStop)
+        #finish end of file
+        self._offset = self._offset + struct.calcsize(self._end)
+        
+    def getColorStops(self):
+        stops = []
+        for i in self._cStops:
+            stops.append({
+                'Color': i.getColor(),
+                'Location': i.getLocation(),
+                'MidPoint': i.getMidpoint()})
+        return stops
+
+    def getTransStops(self):
+        stops = []
+        for i in self._tStops:
+            stops.append({
+                'Level': i.getOpacity(),
+                'Location': i.getLocation(),
+                'MidPoint': i.getMidpoint()})
+        return stops
+        
+    def getMaterial(self):
+        return {
+        'IsPrimary': True, 
+        'NewMaterial': {
+            'Color': None, 
+            'Pattern': None, 
+            'Gradient': {
+                'Name': self._name, 
+                'ColorStops': self.getColorStops(), 
+                'TransparencyStops': self.getTransStops(), 
+                }, 
+            'Texture': None, 
+            'Art': None
+            }
+        }
+        
+class cStop:
+    _offset = 0
+    _midpoint = 0
+    _model = 0
+    _colors = []
+    _type = 0
+    
+    def __init__(self, offset, midpoint, model, colors, type):
+        self._offset = offset
+        self._midpoint = midpoint
+        self._model = model
+        self._colors = colors
+        self._type = type
+
+    def __str__(self):
+        return self._name
+        
+    def getLocation(self):
+        return round((self._offset/4096.0),2)
+    
+    def getMidpoint(self):
+        return round(self._midpoint/100.0,2)
+
+    def getColor(self):
+        return (self._colors[0],self._colors[1],self._colors[2])
+        
+class tStop:
+    _offset = 0
+    _midpoint = 0
+    _opacity = 0
+    
+    def __init__(self, offset, midpoint, opacity):
+        self._offset = offset
+        self._midpoint = midpoint
+        self._opacity = opacity
+        
+    def getLocation(self):
+        return round((self._offset/4096.0),2)
+    
+    def getMidpoint(self):
+        return round(self._midpoint/100.0,2)
+    
+    def getOpacity(self):
+        return round(self._opacity/255.0,2) * 100
+        
+def enumerate(seq):
+    return zip(xrange(len(seq)), seq)
+
+def findGradient(Environment, name):
+    GradientLocations = App.Do(Environment, 'ReturnFileLocations')['Gradients']
+    for loc in GradientLocations:
+        for root, dirs, files in walk(loc):
+            path = root#.split(os.sep)
+            for file in files:
+                if file.rfind(name) > -1:
+                    return os.path.join(path,file)
+                    
+def walk(top):
+    try:
+        names = os.listdir(top)
+    except:
+        pass
+
+    dirs, nondirs = [], []
+    for name in names:
+        if os.path.isdir(os.path.join(top, name)):
+            dirs.append(name)
+        else:
+            nondirs.append(name)
+
+    yield (top, dirs, nondirs)
+    
+def ParseStops(stops, type):
+    parsedStops = []
+    #If the starting point is not at zero, add a point that starts at zero
+    if stops[0]['Location'] > 0:
+        newstart = stops[0].copy()
+        newstart['Location'] = 0
+        parsedStops.append(newstart)
+    #if the ending point is not at 100%, add a point that ends at 100
+    if stops[-1]['Location'] < 1:
+        newend = stops[-1].copy()
+        newend['Location'] = 1.0
+        stops.append(newend)
+    #Next go through all stops, if a stop has a midpoint at any position other than 50%
+    #add a color point at the current midpoint.
+    for i,stop in enumerate(stops):
+        parsedStops.append(stop)
+        if int(stop['MidPoint'] * 100.0) != 50:
+            if i == len(stops)-1:
+                continue
+            location = (stops[i+1]['Location'] - stop['Location'] ) * stop['MidPoint'] + stop['Location']
+            if type == 0:
+                r = ((stops[i+1]['Color'][0] - stop['Color'][0])/2) + stop['Color'][0]
+                g = ((stops[i+1]['Color'][1] - stop['Color'][1])/2) + stop['Color'][1]
+                b = ((stops[i+1]['Color'][2] - stop['Color'][2])/2) + stop['Color'][2]
+                parsedStops.append({'Color':(r,g,b),'Location':location,'MidPoint':.5})
+            else:
+                l = ((stops[i+1]['Level'] - stop['Level'])/2) + stop['Level']
+                parsedStops.append({'Level':l,'Location':location,'MidPoint':.5})
+                
+    return parsedStops
+
+def rgb_stop_interp(rs0, rs1, z):
+  z = z * 1.0
+  M =(z - rs0['Location'])/(rs1['Location'] - rs0['Location'])
+  rs = {}
+  rs['Location'] = z
+  rsr = rs0['Color'][0] + M*(rs1['Color'][0] - rs0['Color'][0])
+  rsg = rs0['Color'][1] + M*(rs1['Color'][1] - rs0['Color'][1])
+  rsb = rs0['Color'][2] + M*(rs1['Color'][2] - rs0['Color'][2])
+  rs['Color'] = (round(rsr),round(rsg),round(rsb))
+  rs['MidPoint'] = .5
+  return rs
+  
+def op_stop_interp(os0,os1,z):
+  z = z * 1.0
+  M =(z - os0['Location'])/(os1['Location'] - os0['Location'])
+  os = {}
+  os['Location'] = z
+  os['Level'] = os0['Level'] + M*(os1['Level'] - os0['Level'])
+  os['MidPoint'] = 0.5
+  return os
+
+def PrepareMerge(cstops, tstops):
+    tstops = PrepareStops(cstops, tstops, op_stop_interp)
+    cstops = PrepareStops(tstops, cstops, rgb_stop_interp)
+    return cstops, tstops
+    
+def PrepareStops(src, dest, func):
+    for x in src:
+        if x['Location'] not in [y['Location'] for y in dest]:
+            for i,y in enumerate(dest):
+                if y['Location'] < x['Location']:
+                    y0 = y
+                else:
+                    y1 = y
+                    break
+            dest.insert(i,func(y0, y1, x['Location']))
+    return dest
+    
+def merge(cstops, tstops):
+    if len(cstops) != len(tstops):
+        return
+    mergeStops = []
+    for i in range(len(cstops)):
+        mergeStops.append({'Color':cstops[i]['Color'], 'Level':tstops[i]['Level'], 'Location':cstops[i]['Location']})
+    return mergeStops
+
+def toRadians(degrees):
+	return degrees / 180 * math.pi
+
+def pointOfAngle(a):
+    return {'x':math.cos(a),
+            'y':math.sin(a)}
+
+def degreesToRadians(d):
+    return ((d * math.pi) / 180)
+
+def angleToPoints(angle):
+    eps = math.pow(2, -52)
+    angle = (angle % 360)
+    startPoint = pointOfAngle(degreesToRadians(90+angle))
+    endPoint = pointOfAngle(degreesToRadians(270 + angle))
+
+    # if you want negative values you can remove the following checks
+    # but most likely it will produce undesired results
+    if startPoint['x'] <= 0 or abs(startPoint['x']) <= eps:
+        startPoint['x'] = 0
+
+    if startPoint['y'] <= 0 or abs(startPoint['y']) <= eps:
+        startPoint['y'] = 0
+
+    if endPoint['x'] <= 0 or abs(endPoint['x']) <= eps:
+        endPoint['x'] = 0
+
+    if endPoint['y'] <= 0 or abs(endPoint['y']) <= eps:
+        endPoint['y'] = 0
+    return (round(startPoint['x'],2), round(startPoint['y'],2), round(endPoint['x'],2), round(endPoint['y'],2))
+
+def toSVG(name, stops, angle, invert, type, centerpoint=(0.5,0.5), focalpoint=(0.5,0.5)):
+    if invert:
+        newstops = []
+        count = len(stops) -1
+        for i in range(count+1):
+            newstops.append({'Color':stops[i]['Color'], 'Level':stops[i]['Level'], 'Location': stops[count-i]['Location']})
+        stops = newstops
+        stops.reverse()
+    svg = ""
+    if type == 0:
+        anglePoints = angleToPoints(angle)
+        x1 = anglePoints[0]
+        y1 = anglePoints[1]
+        x2 = anglePoints[2]
+        y2 = anglePoints[3]
+        lg = xml.Element('linearGradient', {'id':name, 'x1':str(x1), 'y1':str(y1), 'x2':str(x2), 'y2':str(y2)})
+        for x in stops:
+            xml.SubElement(lg, 'stop', {'offset': str(round(x['Location']*100.0,2))+'%', 'stop-color':'rgb'+str(x['Color']), 'stop-opacity':str(round(x['Level']/100.0,4))})
+        return lg
+    else:
+        if focalpoint == None:
+            focalpoint = (0.5, 0.5)
+        id = str(uuid.uuid4())
+        rg = xml.Element('radialGraident', {'id':id, 
+                                            'cx':str(centerpoint[0]*100)+'%', 
+                                            'cy':str(centerpoint[1]*100)+'%', 
+                                            'fx':str(focalpoint[0]*100)+'%',
+                                            'fy':str(focalpoint[1]*100)+'%'})
+        for x in stops:
+            xml.SubElement(rg, 'stop',{'offset':str(round(x['Location']*100.0,2)),
+                                       'stop-color':'rgb'+str(x['Color']),
+                                       'stop-opacity':str(round(x['Level']/100.0,4))})
+        return rg
