@@ -18,4 +18,3 @@ Not yet in any way shape or form complete.  Attempts to do the basics of exporti
 * Figure out how to add the allowed style ends as they are specific to PSP
 * Pattern Support? (Unknown if this will be reasonably do-able)
 * Add support for some basic Layer FX like Drop Shadow or Bevel.
-* 
