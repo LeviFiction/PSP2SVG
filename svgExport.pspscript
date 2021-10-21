@@ -76,6 +76,8 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                         create_vector_group(Environment, group, objs)
                     elif obj['ObjectType'] == 'Rectangle':
                         data = obj['RectangleData']
+                        if not data['Visibility']:
+                            continue
                         stroke_data = {'linestyle':data['LineStyle'],
                                        'joinstyle':data['Join'],
                                        'miter':data['MiterLimit'],
@@ -92,6 +94,8 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                                        data['Matrix'], fill_color, stroke_data)
                     elif obj['ObjectType'] == 'Ellipse':
                         data = obj['EllipseData']
+                        if not data['Visibility']:
+                            continue
                         stroke_data = {'linestyle':data['LineStyle'],
                                        'joinstyle':data['Join'],
                                        'miter':data['MiterLimit'],
@@ -108,6 +112,8 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                         convert_to_path(Environment, obj['Path'])
                         current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
                         data = current_object['ObjectData']
+                        if not data['Visibility']:
+                            continue
                         stroke_data = {'linestyle':data['LineStyle'],
                                        'joinstyle':data['Join'],
                                        'miter':data['MiterLimit'],
@@ -119,6 +125,8 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                         convert_to_path(Environment, obj['Path'])
                         current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
                         data = current_object['ObjectData']
+                        if not data['Visibility']:
+                            continue
                         stroke_data = {'linestyle':data['LineStyle'],
                                        'joinstyle':data['Join'],
                                        'miter':data['MiterLimit'],
@@ -128,6 +136,8 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                         addPath(group, data['ObjectName'], data['Path'], fill_color, stroke_data)
                     elif obj['ObjectType'] == 'Path':
                         data = obj['ObjectData']
+                        if not data['Visibility']:
+                            continue
                         stroke_data = {'linestyle':data['LineStyle'],
                                        'joinstyle':data['Join'],
                                        'miter':data['MiterLimit'],
@@ -171,6 +181,8 @@ def create_vector_group(Env, group, groupData):
         elif current_object['ObjectType'] == 'Rectangle':
             # Add rectangle to current group
             data = current_object['RectangleData']
+            if not data['Visibility']:
+                continue
             stroke_data = {'linestyle':data['LineStyle'],
                 'joinstyle':data['Join'],
                 'miter':data['MiterLimit'],
@@ -188,6 +200,8 @@ def create_vector_group(Env, group, groupData):
         elif current_object['ObjectType'] == 'Ellipse':
             # Add ellipse to current group
             data = current_object['EllipseData']
+            if not data['Visibility']:
+                continue
             stroke_data = {'linestyle':data['LineStyle'],
                 'joinstyle':data['Join'],
                 'miter':data['MiterLimit'],
@@ -204,6 +218,8 @@ def create_vector_group(Env, group, groupData):
             convert_to_path(env, current_object['Path'])
             current_object = returnVectorProperties(env)['ListOfObjects'][0]
             data = current_object['ObjectData']
+            if not data['Visibility']:
+                continue
             stroke_data = {'linestyle':data['LineStyle'],
                             'joinstyle':data['Join'],
                             'miter':data['MiterLimit'],
@@ -214,6 +230,8 @@ def create_vector_group(Env, group, groupData):
         elif current_object['Path']:
             # Add path to current group
             data = current_object['ObjectData']
+            if not data['Visibility']:
+                continue
             stroke_data = {'linestyle':data['LineStyle'],
                 'joinstyle':data['Join'],
                 'miter':data['MiterLimit'],
