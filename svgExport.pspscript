@@ -56,6 +56,7 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
             group = createGroup(validName(result['General']['Name']))
             objs = True
             while objs:
+                color = "RGB(0,0,0"
                 objs = nextObject(Environment)
                 if objs:
                     obj = objs['ListOfObjects'][0]
@@ -65,6 +66,8 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                         create_vector_group(Environment, group, objs)
                     elif obj['ObjectType'] == 'Rectangle':
                         data = obj['RectangleData']
+                        if data['Fill']['Color']:
+                            color = "RGB"+str(data['Fill']['Color'])
                         addRect(group, data['ObjectName'],
                                        data['Top'],
                                        data['Left'],
@@ -72,28 +75,36 @@ def makeSVG(Environment, includeRaster=False, Embed=True):
                                        data['Height'],
                                        data['RadiusX'],
                                        data['RadiusY'],
-                                       data['Matrix'])
+                                       data['Matrix'], color)
                     elif obj['ObjectType'] == 'Ellipse':
                         data = obj['EllipseData']
+                        if data['Fill']['Color']:
+                            color = "RGB"+str(data['Fill']['Color'])
                         addEllipse(group, data['ObjectName'],
                                           data['CenterX'],
                                           data['CenterY'],
                                           data['RadiusX'],
                                           data['RadiusY'],
-                                          data['Matrix'])
+                                          data['Matrix'], color)
                     elif obj['ObjectType'] == 'SymmetricShape':
                         convert_to_path(Environment, obj['Path'])
                         current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
                         data = current_object['ObjectData']
-                        addPath(group, data['ObjectName'], data['Path'])
+                        if data['Fill']['Color']:
+                            color = "RGB"+str(data['Fill']['Color'])
+                        addPath(group, data['ObjectName'], data['Path'], color)
                     elif obj['ObjectType'] in ['Text', 'TextEx']:
                         convert_to_path(Environment, obj['Path'])
                         current_object = returnVectorProperties(Environment)['ListOfObjects'][0]
                         data = current_object['ObjectData']
-                        addPath(group, data['ObjectName'], data['Path'])
+                        if data['Fill']['Color']:
+                            color = "RGB"+str(data['Fill']['Color'])
+                        addPath(group, data['ObjectName'], data['Path'], color)
                     elif obj['ObjectType'] == 'Path':
                         data = obj['ObjectData']
-                        addPath(group, data['ObjectName'], data['Path'])
+                        if data['Fill']['Color']:
+                            color = "RGB"+str(data['Fill']['Color'])
+                        addPath(group, data['ObjectName'], data['Path'], color)
 
             rootTree.insert(len(rootTree), group)
         newLayer = selectNextLayer(Environment)
@@ -226,25 +237,25 @@ def SaveSVG(filename, rootTree):
         f.write(doctype)
         f.write(xml.tostring(rootTree))
 
-def addEllipse(root, id, x,y,rx,ry,matrix=None):
+def addEllipse(root, id, x,y,rx,ry,matrix=None, color="RGB(0,0,0"):
     """Convert Ellipse data to SVG and add to root"""
     print("Entered Ellipse")
     print(matrix)
     if matrix:
-        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
+        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix), 'fill':color })        
     else:
-        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry)})
+        xml.SubElement(root, 'ellipse', {'id': id, 'cx': str(x), 'cy': str(y), 'rx':str(rx), 'ry':str(ry), 'fill':color})
 
-def addRect(root, id, top, left, width, height, rx, ry, matrix = None):
+def addRect(root, id, top, left, width, height, rx, ry, matrix = None, color="RGB(0,0,0"):
     """Convert Rectangle data to SVG and add to root"""
     print("Entered Rectangle")
     print(matrix)
     if matrix:
-        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix) })        
+        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'transform':pspMatrixToSVG(matrix), 'fill':color })        
     else:
-        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry)})
+        xml.SubElement(root, 'rect', {'id': id, 'x': str(left), 'y': str(top), 'width':str(width), 'height':str(height), 'rx':str(rx), 'ry':str(ry), 'fill':color})
 
-def addPath(root, id, path):
+def addPath(root, id, path, color="RGB(0,0,0"):
     """Convert Path data to SVG and add to root"""
     cmd = ['M', 'L', 'C', 'Z']
     pathstr = ""
@@ -254,7 +265,7 @@ def addPath(root, id, path):
             if i == 0:
                 continue
             pathstr += ",".join(list(map(str, d))) + " " 
-    xml.SubElement(root, 'path', {'id':id, 'd':pathstr})
+    xml.SubElement(root, 'path', {'id':id, 'd':pathstr, 'fill':color})
 
 def user_path(*paths):
     return os.path.join(os.environ['USERPROFILE'], *paths)
