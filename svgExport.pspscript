@@ -1,4 +1,6 @@
 from JascApp import *
+import Tkinter
+import tkFileDialog
 import xml.etree.cElementTree as xml
 import os
 
@@ -17,8 +19,11 @@ def ScriptProperties():
         }
 
 def Do(Environment):
-    svg = makeSVG(Environment)
-    SaveSVG(user_path("desktop", "testsvg.svg"), svg)
+    Tkinter.Tk().withdraw()
+    filename = tkFileDialog.asksaveasfilename(initialdir = user_path('Pictures'),title = "Export SVG",filetypes = (("SVG","*.svg"),))
+    print(filename)
+    svg_data = makeSVG(Environment)
+    SaveSVG(filename, svg_data)
 
 # This function is used to see if materials already exist as resource
 def elements_equal(e1, e2):
