@@ -353,7 +353,7 @@ def parse_material(material):
             colorStops = reader.getColorStops()
             opacityStops = reader.getTransStops()
         else:
-            return
+            return 'none'
         #Make sure stops are uniform, definate beginning, end. And ensure mid-points are all 50%
         colorStops = ParseStops(colorStops, 0)
         opacityStops = ParseStops(opacityStops, 1)
@@ -365,7 +365,7 @@ def parse_material(material):
         final = merge(colorStops, opacityStops)
         if final == None:
             print("Error processing Gradient")
-            return
+            return 'none'
         gradient = toSVG(validName(material['Name']), final, material['Angle'], material['Invert'], material['GradientType'], material['CenterPoint'], material['FocalPoint'])
         id = gradient.attrib['id']
         defs.insert(len(defs.getchildren()),gradient)
@@ -373,7 +373,8 @@ def parse_material(material):
 
     if material['Pattern']:
         return "rgb(0,0,0)"
-
+    return 'none'
+    
 def embedImage(Environment, root, filename):
     """Open file, save as png and embed into xml"""
     svgpng = user_path('AppData', 'Local', 'Temp','svgpng.png')
